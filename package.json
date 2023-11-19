@@ -1,0 +1,28 @@
+{
+  "name": "@teampanfu/websockify",
+  "version": "1.0.0",
+  "description": "A CLI tool for creating a WebSocket TCP proxy server.",
+  "keywords": [
+    "websocket",
+    "tcp",
+    "proxy"
+  ],
+  "homepage": "https://github.com/teampanfu/websockify#readme",
+  "bugs": {
+    "url": "https://github.com/teampanfu/websockify/issues"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/teampanfu/websockify.git"
+  },
+  "license": "MIT",
+  "author": "Panfu.us <webmaster@panfu.us>",
+  "main": "websockify.js",
+  "bin": {
+    "websockify": "websockify.js"
+  },
+  "dependencies": {
+    "ws": "^8.14.2",
+    "yargs": "^17.7.2"
+  }
+}
