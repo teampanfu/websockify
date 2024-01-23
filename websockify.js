@@ -95,7 +95,7 @@ wss.on('connection', (ws, req) => {
     tcpSocket.write(message);
   });
 
-  ws.on('close', () => {
+  ws.on('close', (code, reason) => {
     debug(connectionId, 'WebSocket connection closed with code:', code, 'and reason:', reason);
     tcpSocket.end();
   });
