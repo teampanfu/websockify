@@ -96,7 +96,7 @@ wss.on('connection', (ws, req) => {
   });
 
   ws.on('close', () => {
-    debug(connectionId, 'WebSocket connection closed');
+    debug(connectionId, 'WebSocket connection closed with code:', code, 'and reason:', reason);
     tcpSocket.end();
   });
 
