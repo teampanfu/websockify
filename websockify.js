@@ -96,7 +96,15 @@ wss.on('connection', (ws, req) => {
   });
 
   ws.on('close', (code, reason) => {
-    debug(connectionId, 'WebSocket connection closed with code:', code, 'and reason:', reason);
+    if (Buffer.isBuffer(reason)) {
+      reason = reason.toString('utf8');
+    }
+
+    if (typeof reason === 'string' && reason.length > 0) {
+      debug(connectionId, 'WebSocket connection closed with code:', code, 'and reason:', reason);
+    } else {
+      debug(connectionId, 'WebSocket connection closed with code:', code);
+    }
     tcpSocket.end();
   });
 
