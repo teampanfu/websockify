@@ -22,7 +22,7 @@
     "websockify": "websockify.js"
   },
   "dependencies": {
-    "ws": "^8.16.0",
+    "ws": "^8.17.1",
     "yargs": "^17.7.2"
   }
 }
