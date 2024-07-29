@@ -4,6 +4,7 @@ const fs = require('fs');
 const http = require('http');
 const https = require('https');
 const net = require('net');
+const path = require('path');
 const WebSocket = require('ws');
 const yargs = require('yargs');
 
@@ -16,7 +17,7 @@ const argv = yargs
         type: 'number',
       })
       .positional('target', {
-        describe: 'TCP server port or host:port',
+        describe: 'TCP server port, host:port, or path to JSON file with ID-to-TCP-port mappings',
         type: 'string',
       });
   })
@@ -41,12 +42,31 @@ const argv = yargs
 
 const { port, target, cert, key, debug: isDebug } = argv;
 
-const targetParts = target.includes(':') ? target.split(':') : ['127.0.0.1', target];
-const [targetHost, targetPort] = targetParts;
+let tcpPortMappings = {};
+let targetHost = '127.0.0.1';
+let targetPort = null;
+let targetType = 'direct';
 
-if (!targetHost || !targetPort || isNaN(targetPort)) {
-  console.error('Invalid target. It should be a valid port or host:port format.');
-  process.exit(1);
+if (target.includes(':')) {
+  const targetParts = target.split(':');
+  targetHost = targetParts[0];
+  targetPort = parseInt(targetParts[1], 10);
+
+  if (isNaN(targetPort)) {
+    console.error('Invalid target port. It should be a valid number.');
+    process.exit(1);
+  }
+} else if (!isNaN(target)) {
+  targetPort = target;
+} else {
+  try {
+    const filePath = path.resolve(target);
+    tcpPortMappings = JSON.parse(fs.readFileSync(filePath, 'utf8'));
+    targetType = 'mappings';
+  } catch (error) {
+    console.error(`Error reading or parsing target file: ${error.message}`);
+    process.exit(1);
+  }
 }
 
 const debug = (connectionId, ...args) => {
@@ -84,9 +104,23 @@ wss.on('error', (error) => {
 });
 
 wss.on('connection', (ws, req) => {
+  let currentTargetPort = targetPort;
+
+  if (!currentTargetPort) {
+    const urlParts = req.url.split('/');
+    const id = urlParts[1];
+
+    if (!id || !tcpPortMappings[id]) {
+      ws.close(4000, 'Invalid ID');
+      return;
+    }
+
+    currentTargetPort = tcpPortMappings[id];
+  }
+
   const connectionId = `WS#${++connectionCounter} ${req.socket.remoteAddress}`;
 
-  const tcpSocket = net.connect(targetPort, targetHost, () => {
+  const tcpSocket = net.connect(currentTargetPort, targetHost, () => {
     debug(connectionId, 'TCP connection opened');
   });
 
@@ -126,7 +160,12 @@ wss.on('connection', (ws, req) => {
 
 server.listen(port, () => {
   const serverAddress = server.address();
-  console.log(`Proxying from [${serverAddress.address}]:${serverAddress.port} to [${targetHost}]:${targetPort}`);
+
+  if (targetType === 'mappings') {
+    console.log(`Proxying WebSocket connections from [${serverAddress.address}]:${serverAddress.port} using mappings from file: ${target}`);
+  } else {
+    console.log(`Proxying WebSocket connections from [${serverAddress.address}]:${serverAddress.port} to [${targetHost}]:${targetPort}`);
+  }
 
   if (cert && key) {
     console.log('Running in secured WebSocket (wss://) mode');
