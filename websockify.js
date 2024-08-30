@@ -45,24 +45,26 @@ const { port, target, cert, key, debug: isDebug } = argv;
 let tcpPortMappings = {};
 let targetHost = '127.0.0.1';
 let targetPort = null;
-let targetType = 'direct';
 
 if (target.includes(':')) {
-  const targetParts = target.split(':');
-  targetHost = targetParts[0];
-  targetPort = parseInt(targetParts[1], 10);
+  const [host, portStr] = target.split(':');
+  targetHost = host;
+  targetPort = parseInt(portStr, 10);
 
   if (isNaN(targetPort)) {
     console.error('Invalid target port. It should be a valid number.');
     process.exit(1);
   }
 } else if (!isNaN(target)) {
-  targetPort = target;
+  targetPort = parseInt(target, 10);
+  if (isNaN(targetPort)) {
+    console.error('Invalid target port. It should be a valid number.');
+    process.exit(1);
+  }
 } else {
   try {
     const filePath = path.resolve(target);
     tcpPortMappings = JSON.parse(fs.readFileSync(filePath, 'utf8'));
-    targetType = 'mappings';
   } catch (error) {
     console.error(`Error reading or parsing target file: ${error.message}`);
     process.exit(1);
@@ -79,43 +81,33 @@ let server;
 
 if (cert && key) {
   try {
-    // If both a certificate and key are provided and they exist, set up an HTTPS server
     const httpsOptions = {
       cert: fs.readFileSync(cert),
       key: fs.readFileSync(key),
     };
-
     server = https.createServer(httpsOptions);
   } catch (error) {
     console.error(`Error reading certificate or key files: ${error.message}`);
     process.exit(1);
   }
 } else {
-  // If no certificate and key are provided, set up an HTTP server
   server = http.createServer();
 }
 
 const wss = new WebSocket.Server({ server });
 
-let connectionCounter = 0;
-
-wss.on('error', (error) => {
-  console.error(`WebSocket server encountered an error: ${error.message}`);
+wss.on('error', (err) => {
+  console.error(`WebSocket server error: ${err.message}`);
 });
 
 wss.on('connection', (ws, req) => {
-  let currentTargetPort = targetPort;
+  const urlParts = req.url.split('/');
+  const id = urlParts[1];
+  const currentTargetPort = id && tcpPortMappings[id] ? tcpPortMappings[id] : targetPort;
 
   if (!currentTargetPort) {
-    const urlParts = req.url.split('/');
-    const id = urlParts[1];
-
-    if (!id || !tcpPortMappings[id]) {
-      ws.close(4000, 'Invalid ID');
-      return;
-    }
-
-    currentTargetPort = tcpPortMappings[id];
+    ws.close(4000, 'Invalid ID');
+    return;
   }
 
   const connectionId = `WS#${++connectionCounter} ${req.socket.remoteAddress}`;
@@ -129,16 +121,13 @@ wss.on('connection', (ws, req) => {
     tcpSocket.write(message);
   });
 
-  ws.on('close', (code, reason) => {
-    if (Buffer.isBuffer(reason)) {
-      reason = reason.toString('utf8');
-    }
+  ws.on('error', (err) => {
+    console.error(`[${connectionId}] WebSocket error: ${err.message}`);
+    ws.close();
+  });
 
-    if (typeof reason === 'string' && reason.length > 0) {
-      debug(connectionId, 'WebSocket connection closed with code:', code, 'and reason:', reason);
-    } else {
-      debug(connectionId, 'WebSocket connection closed with code:', code);
-    }
+  ws.on('close', (code, reason) => {
+    debug(connectionId, `WebSocket closed with code: ${code}, reason: ${Buffer.isBuffer(reason) ? reason.toString('utf8') : reason}`);
     tcpSocket.end();
   });
 
@@ -148,7 +137,7 @@ wss.on('connection', (ws, req) => {
   });
 
   tcpSocket.on('error', (err) => {
-    console.error(`[${connectionId}] Failed to establish the TCP connection: ${err.message}`);
+    console.error(`[${connectionId}] TCP connection error: ${err.message}`);
     ws.close();
   });
 
@@ -159,25 +148,8 @@ wss.on('connection', (ws, req) => {
 });
 
 server.listen(port, () => {
-  const serverAddress = server.address();
-
-  if (targetType === 'mappings') {
-    console.log(`Proxying WebSocket connections from [${serverAddress.address}]:${serverAddress.port} using mappings from file: ${target}`);
-  } else {
-    console.log(`Proxying WebSocket connections from [${serverAddress.address}]:${serverAddress.port} to [${targetHost}]:${targetPort}`);
-  }
-
-  if (cert && key) {
-    console.log('Running in secured WebSocket (wss://) mode');
-    console.log(`SSL certificate: ${cert}`);
-    console.log(`SSL key: ${key}`);
-  } else {
-    console.log('Running in unsecured WebSocket (ws://) mode');
-  }
-
-  if (isDebug) {
-    console.log('Debug mode is enabled');
-  } else {
-    console.log('Debug mode is disabled, only errors will be logged');
-  }
+  const { address, port: serverPort } = server.address();
+  console.log(`Proxying WebSocket connections from [${address}]:${serverPort} ${targetPort ? `to [${targetHost}]:${targetPort}` : `using mappings from file: ${target}`}`);
+  console.log(cert && key ? `Running in secured WebSocket (wss://) mode\nSSL certificate: ${cert}\nSSL key: ${key}` : 'Running in unsecured WebSocket (ws://) mode');
+  console.log(`Debug mode is ${isDebug ? 'enabled' : 'disabled'}`);
 });
