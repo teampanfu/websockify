@@ -96,6 +96,8 @@ if (cert && key) {
 
 const wss = new WebSocket.Server({ server });
 
+let connectionCounter = 0;
+
 wss.on('error', (err) => {
   console.error(`WebSocket server error: ${err.message}`);
 });
